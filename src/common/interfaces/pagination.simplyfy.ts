@@ -1,0 +1,1 @@
+export interface ISimplify {  currentPage: number, pageCount:number, limit:number}
