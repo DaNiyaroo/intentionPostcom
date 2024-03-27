@@ -1,3 +1,4 @@
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { BadRequestException, Body, Injectable, NotFoundException, Req, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,6 +14,8 @@ import { MailService } from './mail.service';
 import { authenticator } from 'otplib';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { ApiResponse } from 'src/common/http/api.response';
+import { ResendPasswordDto } from './dto/resend-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -21,7 +24,7 @@ export class AuthService {
     private readonly emailService: MailService,
     private readonly jwtService: JwtService,
   ) { }
-  async sendOtp(createOtpDto: CreateOtpDto): Promise<{ message: string }> {
+  async sendOtp(createOtpDto: CreateOtpDto): Promise<ApiResponse> {
     try {
       const { email } = createOtpDto;
       let user = await this.userRepo.findOne({ where: { email } });
@@ -37,15 +40,17 @@ export class AuthService {
       user = this.userRepo.create({ email, otp, otpCreatedAt });
       await this.userRepo.save(user);
       await this.emailService.sendOtpEmail(email, otp);
-      return { message: 'OTP sent. Please check your email for the code.' };
+      const response = new ApiResponse({ message: 'OTP sent. Please check your email for the code.' });
+      return response;
     } catch (error) {
       console.error(error);
       throw error
     }
   }
 
-  async resendOtp(email: string): Promise<{ message: string }> {
+  async resendOtp(resendOtpDto: CreateOtpDto): Promise<ApiResponse> {
     try {
+      const { email } = resendOtpDto
       const user = await this.userRepo.findOne({ where: { email } });
       if (!user) {
         throw new BadRequestException(`User with email ${email} does not exist`);
@@ -58,14 +63,16 @@ export class AuthService {
 
       await this.userRepo.save(user);
       await this.emailService.sendOtpEmail(email, otp);
-      return { message: 'New OTP sent. Please check your email for the code.' };
+      const response = new ApiResponse({ message: 'New OTP sent. Please check your email for the code.' });
+      return response;
     } catch (error) {
       throw error;
     }
   }
 
-  async verifyOtp(email: string, otp: string): Promise<{ accessToken: string; refreshToken: string; message: string } | null> {
+  async verifyOtp(verifyOtpDto: VerifyOtpDto): Promise<ApiResponse> {
     try {
+      const { email, otp} = verifyOtpDto
       const user = await this.userRepo.findOne({ where: { email } });
       if (!user || user.otp !== otp) {
         throw new BadRequestException('Invalid OTP');
@@ -89,14 +96,15 @@ export class AuthService {
       user.token = refreshToken;
       await this.userRepo.save(user);
 
-      return { accessToken, refreshToken, message: 'Verification successful' };
+      const response = new ApiResponse({ accessToken, refreshToken, message: 'Verification successful' });
+      return response;
     } catch (error) {
       console.error('Error in verifyOtp:', error);
       throw error;
     }
   }
 
-  async completeRegistration(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req: RequestWithUser): Promise<{ accessToken: string; refreshToken: string; message: string } | User> {
+  async completeRegistration(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req: RequestWithUser): Promise<ApiResponse> {
     try {
       const { firstname, lastname, username, password, phone } = createRegistrationDto;
       if (!req.user) {
@@ -128,14 +136,15 @@ export class AuthService {
       );
       updatedUser.token = refreshToken;
       await this.userRepo.save(user);
-      return { accessToken, refreshToken, message: 'Registration successful' };
+      const response = new ApiResponse({ accessToken, refreshToken, message: 'Registration successful' });
+      return response;
     } catch (error) {
       console.error('Error in completeRegistration:', error);
       throw error;
     }
   }
 
-  async login(loginDto: LoginDto): Promise<{ accessToken: string; refreshToken: string } | User> {
+  async login(loginDto: LoginDto): Promise<ApiResponse> {
     try {
       const { usernameOrEmail, password } = loginDto;
       const user = await this.userRepo.findOne({
@@ -158,15 +167,17 @@ export class AuthService {
       );
       user.token = refreshToken;
       await this.userRepo.save(user);
-      return { accessToken, refreshToken };
+      const response = new ApiResponse({ accessToken, refreshToken });
+      return response;
     } catch (error) {
       console.error('Error in login:', error);
       throw error;
     }
   }
 
-  async sendResetPasswordEmail(email: string): Promise<{ message: string }> {
+  async sendResetPasswordEmail(emailDto: CreateOtpDto):  Promise<ApiResponse>  {
     try {
+      const { email } = emailDto
       const user = await this.userRepo.findOne({ where: { email } });
       if (!user) {
         throw new BadRequestException(`User with email ${email} does not exist`);
@@ -179,24 +190,36 @@ export class AuthService {
       await this.userRepo.save(user);
       const resetUrl = `http://localhost:3000/reset-password/${resetPasswordToken}`;
       await this.emailService.sendResetPasswordEmail(email, resetUrl);
-      return { message: 'Reset password email sent. Please check your email for the link.' };
+      const response = new ApiResponse({ message: 'Reset password email sent. Please check your email for the link' });
+      return response;
     } catch (error) {
       throw error;
     }
   }
 
-  async findUserByResetToken(token: string): Promise<User> {
-    const user = await this.userRepo.findOne({ where: { resetPasswordToken: token } });
-    if (!user) {
-      throw new BadRequestException('Invalid reset password token');
+  async findUserByResetToken(resendPasswordDto: ResendPasswordDto): Promise<ApiResponse> {
+    try {
+      const {token, password} = resendPasswordDto
+      const user = await this.userRepo.findOne({ where: { resetPasswordToken: token } });
+      if (!user) {
+        throw new BadRequestException('Invalid reset password token');
+      }
+      if (user.resetPasswordExpires < new Date()) {
+        throw new BadRequestException('Reset password token has expired');
+      }
+      user.password = await bcrypt.hash(password, 10);
+      user.resetPasswordToken = null;
+      user.resetPasswordExpires = null;
+      await this.userRepo.save(user);
+    
+      const response = new ApiResponse({ message: 'Password has been reset. You can now log in with your new password.' });
+      return response;
+    } catch (error) {
+      throw error
     }
-    if (user.resetPasswordExpires < new Date()) {
-      throw new BadRequestException('Reset password token has expired');
-    }
-    return user;
   }
 
-  async refreshToken(refreshTokenDto: RefreshTokenDto, ): Promise<{ accessToken: string; refreshToken: string }> {
+  async refreshToken(refreshTokenDto: RefreshTokenDto, ): Promise<ApiResponse> {
     try {
       const { refreshToken } = refreshTokenDto;
       if (!refreshToken) {
@@ -224,14 +247,15 @@ export class AuthService {
       user.token = newRefreshToken;
       await this.userRepo.save(user);
   
-      return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+      const response = new ApiResponse({ accessToken: newAccessToken, refreshToken: newRefreshToken });
+      return response;
     } catch (error) {
       console.error('Error in refreshToken:', error);
       throw error;
     }
   }
 
-  async logout(@Req() req: RequestWithUser): Promise<{ message: string }> {
+  async logout(@Req() req: RequestWithUser): Promise<ApiResponse>  {
     try {
       const user = await this.userRepo.findOne({ where: { id: req.user.userId } });
       if (!user) {
@@ -239,8 +263,8 @@ export class AuthService {
       }
       user.token = null;
       await this.userRepo.save(user);
-    
-      return { message: 'Logout successful' };
+      const response = new ApiResponse({ message: 'Logout successful' });
+      return response;
     } catch (error) {
       console.error('Error in logout:', error);
       throw error;

@@ -6,10 +6,16 @@ import { Column, Entity, OneToMany } from "typeorm";
 export class Post extends RootEntity {
 
     @Column()
-    title: string
+    titleUz: string
 
     @Column()
-    description: string
+    titleRu: string
+
+    @Column()
+    descriptionUz: string
+
+    @Column()
+    descriptionRu: string
 
     @Column({ default: 0 })
     views: number;

@@ -15,8 +15,8 @@ export class PostService {
   ) { }
   async create(createPostDto: CreatePostDto) {
     try {
-      const { title, description, author } = createPostDto
-      const createPost = this.postRepo.create({ title, description, author })
+      const { titleUz, titleRu, descriptionUz, descriptionRu, author } = createPostDto
+      const createPost = this.postRepo.create({ titleUz, titleRu, descriptionUz, descriptionRu, author })
       await this.postRepo.save(createPost)
       return "success"
     } catch (error) {
@@ -56,13 +56,15 @@ export class PostService {
   }
   async update(id: number, updatePostDto: UpdatePostDto) {
     try {
-      const { title, description, author } = updatePostDto;
+      const { titleUz, titleRu, descriptionUz, descriptionRu, author } = updatePostDto;
       const post = await this.postRepo.findOne({ where: { id } });
       if (!post) {
         throw new BadRequestException(`Post with id ${id} not found`);
       }
-      post.title = title ?? post.title;
-      post.description = description ?? post.description;
+      post.titleUz = titleUz ?? post.titleUz;
+      post.titleRu = titleRu ?? post.titleRu;
+      post.descriptionUz = descriptionUz ?? post.descriptionUz;
+      post.descriptionRu = descriptionRu ?? post.descriptionRu;
       post.author = author ?? post.author;
       await this.postRepo.save(post);
       return "success"
